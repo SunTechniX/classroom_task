@@ -1,0 +1,98 @@
+name: Autograding Tests
+on:
+  - push
+  - workflow_dispatch
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+
+jobs:
+  # JOB: ЛИНТЕРЫ (информация для студента, не влияет на оценку)
+  run-linters:
+    runs-on: ubuntu-latest
+    name: Code Quality Check (Info Only)
+    # needs: run-tests
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install linters
+        run: |
+          echo "## 🔍 Code Quality Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "### Отчет предназначен только для ознакомительных целей!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
+          echo "📦 Installing linters..." >> $GITHUB_STEP_SUMMARY
+          pip install pylint flake8 -q
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Run linters
+        run: |
+          # Ищем ВСЕ .py файлы в репозитории (кроме test_*)
+          files=$(git ls-files '*.py' | grep -v '^test_.*\.py$')
+          if [ -z "$files" ]; then
+            echo "⚠️ Не найдены Python-файлы в твоём рекозитарии." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "*Примечание учащимся: проверка качества кода может повлиять на твою оценку.*" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+      
+          echo "Found $(echo "$files" | wc -l) Python file(s)." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
+          # PyLint
+          echo "### 🐍 PyLint Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          pylint $files --exit-zero --score=yes 2>&1 >> $GITHUB_STEP_SUMMARY || echo "PyLint failed" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
+          # Flake8
+          echo "### ✨ Flake8 Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          flake8 $files --count --exit-zero --statistics 2>&1 >> $GITHUB_STEP_SUMMARY || echo "Flake8 failed" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
+          # Сводка
+          echo "### 📊 Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | Result | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+      
+          # PyLint score
+          pylint_score=$(pylint $files --exit-zero --score=yes 2>&1 | grep -o 'rated at [0-9.]*' | cut -d' ' -f3)
+          if [ -z "$pylint_score" ]; then
+            pylint_score="N/A"
+            pylint_status="❓"
+          elif awk "BEGIN {exit ($pylint_score < 8.0)}"; then
+            pylint_status="✅ Хорошо"
+          else
+            pylint_status="⚠️ Улучши"
+          fi
+          echo "| PyLint | $pylint_score/10 | $pylint_status |" >> $GITHUB_STEP_SUMMARY
+      
+          # Flake8 count
+          flake8_errors=$(flake8 $files --count 2>/dev/null | tail -1)
+          if ! [[ "$flake8_errors" =~ ^[0-9]+$ ]]; then
+            flake8_errors="0"
+          fi
+          if [ "$flake8_errors" -eq 0 ]; then
+            flake8_status="✅ Отлично"
+          elif [ "$flake8_errors" -le 5 ]; then
+            flake8_status="⚠️ Средне"
+          else
+            flake8_status="❌ Много"
+          fi
+          echo "| Flake8 | $flake8_errors ошибка | $flake8_status |" >> $GITHUB_STEP_SUMMARY
+      
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Примечание учащимся: проверка качества кода может повлиять на твою оценку. Используйте ее, чтобы улучшить свои навыки программирования!*" >> $GITHUB_STEP_SUMMARY
